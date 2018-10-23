@@ -2,4 +2,7 @@
 .piolibdeps
 .clang_complete
 .gcc-flags.json
-./lib/JeVe_EasyOTA
+.travis.yml
+/lib/JeVe_EasyOTA
+/lib/readme.txt
+/include
