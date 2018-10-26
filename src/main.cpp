@@ -3,15 +3,16 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+//#include <DNSServer.h>
 #include <ArduinoJson.h>
 #include <Adafruit_MCP3008.h>
 #include "FS.h"
 #include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
-
+#include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
 
 //******************************************* DEFINITIONS *********************************************//
 #define DBG_OUTPUT_PORT Serial
-
+#define HOST_NAME "Dashboard-debug"
 
 #define TYRE_CIRCUMFERENCE 195 // distance car travels in one wheel rotation, measured in centimeters
 
@@ -48,8 +49,9 @@ const char* password = "IGiveUp24318";
 char* WIFI_SSID = "Gannymede";
 char* WIFI_PASSWORD = "IGiveUp24318";
 char* ARDUINO_HOSTNAME = "vw_dashboard";
-EasyOTA OTA;
 
+RemoteDebug Debug;
+EasyOTA OTA;
 Adafruit_MCP3008 adc;
 ESP8266WebServer server(80);
 
@@ -72,7 +74,7 @@ volatile float fThisKph;
 // ****************************************** METHODS ***************************************//
 // ************************************** General methods ***********************************//
 void listSPIFFS(){
-  DBG_OUTPUT_PORT.println("Listing SPIFFS contents");
+  rdebugIln("Listing SPIFFS contents");
   Dir dir = SPIFFS.openDir("");
   while (dir.next()){
     DBG_OUTPUT_PORT.print(dir.fileName());
@@ -103,7 +105,6 @@ void listSPIFFS(){
     // now return the adjusted average
     return ( fFilterSum / TACHFILTERSIZE ) * 15 ; //60/4 ppr=15
   }
-// **************************************** Tacho methods end *************************************//
 // ***************************************** Speedo methods ***************************************//
 // speedo signal input triggers this interrupt vector on the rising edge of pin D4 //
 void speedo_isr(){
@@ -125,11 +126,9 @@ float getSpeedOverDistance(){
   }
   return fKphSum/SPEEDOFILTERSIZE;
 }
-// *************************************** Speedo methods end *************************************//
-// ******************************************* other methods **************************************//
+// ******************************************* Other methods **************************************//
 
-int getRotation(int reading, int startDegrees, int endDegrees, int startValue, int endValue)
-{
+int getRotation(int reading, int startDegrees, int endDegrees, int startValue, int endValue){
     if( reading==0||reading<=startValue)
     {
       return startDegrees;
@@ -147,21 +146,26 @@ int getRotation(int reading, int startDegrees, int endDegrees, int startValue, i
 
 }
 
+float mapFloat(long x, long in_min, long in_max, float out_min, float out_max)
+{
+  float returnValue = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+  return  returnValue;
+}
+
 float getTrueVoltage(int adcIn){
-  DBG_OUTPUT_PORT.print("voltage in from adc : ");
-  DBG_OUTPUT_PORT.println(adcIn);
-  float returnVoltage = 20 * adcIn/1024;
+  float returnVoltage = mapFloat(adcIn, 0, 1023, 0, 20.2);
+  rdebugDln("voltage in from adc : %d return voltage %.2f",adcIn, returnVoltage);
   return(returnVoltage);
-  DBG_OUTPUT_PORT.print("return voltage");
-  DBG_OUTPUT_PORT.println(returnVoltage);
+
 }
 
 //******************************************** getData() *******************************************//
 void getData() {
   // NOTE: **************** this is called frequently so keep it lean ******************************//
   // Tachometer values
+  rdebugIln("getData() called from web page");
   detachInterrupt(digitalPinToInterrupt(TACHO_PIN));           //detaches the interrupt while we update the values
-    float fRPM=getRpm();
+  float fRPM=getRpm();
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING); // re-attaches the interupt coil goes low on each pulse but input is inverted by the H11L1M
   // Speedo values
   detachInterrupt(digitalPinToInterrupt(SPEEDO_PIN));
@@ -169,11 +173,19 @@ void getData() {
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
+  rdebugDln("Reading values from mcp3008 ADC");
   float fTrueVoltage = getTrueVoltage(adc.readADC(VOLTS_PIN));
+  rdebugDln("Voltage from pin %i voltage %f",VOLTS_PIN,fTrueVoltage);
   float fFuelReading = adc.readADC(FUEL_PIN);
+  rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
   float fOilPressureReading = adc.readADC(OILPRESSURE_PIN);
+  rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
   float fOilTempReading = adc.readADC(OILTEMPERATURE_PIN);
+  rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
+  rdebugDln("Digital RPM %f",fRPM);
+  rdebugDln("Speed over distance %f",fKph);
 
+  rdebugDln("Creating JSON object");
   StaticJsonBuffer<2048> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
 
@@ -182,6 +194,8 @@ void getData() {
 
   root["fuel"] = getRotation(fFuelReading,-45,45,0,100);
   root["volts"] = getRotation(fTrueVoltage,-45,45,8,16);
+  rdebugDln("volts rotation %i", getRotation(fTrueVoltage,-45,45,8,16) );
+
   root["pressure"] = getRotation(fOilPressureReading,-45,45,0,80);
   root["temp"] = getRotation(fOilTempReading,-45,45,60,160);
 
@@ -197,6 +211,8 @@ void getData() {
   //print the resulting JSON to a String
   String output;
   root.printTo(output);
+
+  delay(2000);
   server.send(200, "text/html", output);
 }
 
@@ -212,6 +228,18 @@ bool createWifiAP() {
 
   DBG_OUTPUT_PORT.print("AP IP address: ");
   DBG_OUTPUT_PORT.println(myIP);
+  DBG_OUTPUT_PORT.print("WiFi Hostname: ");
+  DBG_OUTPUT_PORT.println(WiFi.hostname());
+
+  String hostNameWifi = HOST_NAME;
+  hostNameWifi.concat(".local");
+  WiFi.hostname(hostNameWifi);
+  if ( MDNS.begin(HOST_NAME ) ) {
+    DBG_OUTPUT_PORT.print("* MDNS responder started. Hostname -> ");
+    DBG_OUTPUT_PORT.println(HOST_NAME);
+    MDNS.addService("telnet", "tcp", 23);
+  }
+
   // handlers called from browser to access files in SPIFFS file system on 8266
   server.serveStatic("/", SPIFFS, "/dashboard.html");
   server.serveStatic("/index.html", SPIFFS, "/dashboard.html");
@@ -237,17 +265,26 @@ void setup() {
     DBG_OUTPUT_PORT.println("Failed to create WiFi AP");
     return;
   }
+  // initialise debugging over telnet
+  Debug.begin(WiFi.hostname()); // Initiaze the telnet server
+  Debug.setResetCmdEnabled(true); // Enable the reset command
+
+  Debug.showProfiler(true); // Profiler
+	Debug.showColors(true); // Colors
+  Debug.setSerialEnabled(true);
   // This callback will be called when JeVe_EasyOTA has anything to tell you.
   OTA.onMessage([](char *message, int line) {
     Serial.println(message);
   });
-
+  rdebugIln("Setting up OTA");
   OTA.setup(WIFI_SSID, WIFI_PASSWORD, ARDUINO_HOSTNAME);
   // Define the input pins // remember the inputs through the H11L1Ms are inverted
+  rdebugIln("configuring input pins");
   pinMode( HIGHBEAM_PIN, INPUT_PULLUP);
   pinMode( LEFTINDICATOR_PIN, INPUT_PULLUP);
   pinMode( RIGHTINDICATOR_PIN, INPUT_PULLUP);
   // initialise the Interrupt handling on the input pins
+  rdebugIln("Setting up interrupts for Tacho and Speedo");
   fTachCounter = 0;
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING);
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
@@ -256,7 +293,10 @@ void setup() {
 }
 
 void loop() {
+  // Over-the-air deployment
   OTA.loop();
+  // Remote debug over telnet
+  Debug.handle();
   server.handleClient();
   yield();
 }
