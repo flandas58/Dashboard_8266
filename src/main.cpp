@@ -8,11 +8,17 @@
 #include <Adafruit_MCP3008.h>
 #include "FS.h"
 #include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
-#include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
+//#define DEBUGDASHBOARD
+#ifdef DEBUGDASHBOARD
+  #include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
+#endif
+
 
 //******************************************* DEFINITIONS *********************************************//
 #define DBG_OUTPUT_PORT Serial
 #define HOST_NAME "Dashboard-debug"
+
+
 
 #define TYRE_CIRCUMFERENCE 195 // distance car travels in one wheel rotation, measured in centimeters
 
@@ -54,7 +60,9 @@ char* WIFI_SSID = "Gannymede";
 char* WIFI_PASSWORD = "IGiveUp24318";
 char* ARDUINO_HOSTNAME = "vw_dashboard";
 
-RemoteDebug Debug;
+#ifdef DEBUGDASHBOARD
+  RemoteDebug Debug;
+#endif
 EasyOTA OTA;
 Adafruit_MCP3008 adc;
 ESP8266WebServer server(80);
@@ -71,8 +79,6 @@ volatile float fSpeedoKPHArray[SPEEDOFILTERSIZE];
 long fFilterSum = 0;
 volatile float fThisKph;
 volatile long fDataCount = 0;
-//float value=0;
-//float fRev=0;
 
 // moving averages
 float fOilPressureArray[OILPRESSURESIZE];
@@ -85,7 +91,9 @@ float fFuelTankArray[FUELSIZE];
 // ****************************************** METHODS ***************************************//
 // ************************************** General methods ***********************************//
 void listSPIFFS(){
-  rdebugIln("Listing SPIFFS contents");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("Listing SPIFFS contents");
+  #endif
   Dir dir = SPIFFS.openDir("");
   while (dir.next()){
     DBG_OUTPUT_PORT.print(dir.fileName());
@@ -145,14 +153,20 @@ float getSpeedOverDistance(){
 // ******************************************* Other methods **************************************//
 
 float getRotation(float reading, int startDegrees, int endDegrees, int startValue, int endValue){
-    // rdebugDln("Reading %.2f StartDegrees %i, endDegrees %i startValue %i endValue %i ", reading, startDegrees, endDegrees, startValue, endValue);
+    #ifdef DEBUGDASHBOARD
+      rdebugDln("Reading %.2f StartDegrees %i, endDegrees %i startValue %i endValue %i ", reading, startDegrees, endDegrees, startValue, endValue);
+    #endif
     if(reading<=startValue)
     {
-      //rdebugDln("Using StartDegrees");
+      #ifdef DEBUGDASHBOARD
+        rdebugDln("Using StartDegrees");
+      #endif
       return startDegrees;
     }
     else if (reading>=endValue) {
-      //rdebugDln("using endDegrees");
+      #ifdef DEBUGDASHBOARD
+        rdebugDln("using endDegrees");
+      #endif
       return endDegrees;
     }
     else
@@ -173,8 +187,9 @@ void getData() {
   // NOTE: **************** this is called frequently so keep it lean ******************************//
   // Tachometer values
   fDataCount++;
-  rdebugD("getData() called from web page iteration %6ld \t", fDataCount);
-
+  #ifdef DEBUGDASHBOARD
+    rdebugD("getData() called from web page iteration %6ld \t", fDataCount);
+  #endif
   detachInterrupt(digitalPinToInterrupt(TACHO_PIN));           //detaches the interrupt while we update the values
   float fRPM=getRpm();
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING); // re-attaches the interupt coil goes low on each pulse but input is inverted by the H11L1M
@@ -184,22 +199,29 @@ void getData() {
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
-
-  //rdebugIln("Reading values from mcp3008 ADC");
-  //rdebugI("ADC from pin %i is %i \t",VOLTS_PIN,adc.readADC(VOLTS_PIN) );
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("Reading values from mcp3008 ADC");
+    rdebugI("ADC from pin %i is %i \t",VOLTS_PIN,adc.readADC(VOLTS_PIN) );
+  #endif
   float fTrueVoltage = movingAverage(fVoltageArray, VOLTAGESIZE, mapFloat(adc.readADC(VOLTS_PIN), 0, 1023, 0, 3.3)/ 0.1072);
-  //rdebugI("voltage is %.2f \t", fTrueVoltage);
+  #ifdef DEBUGDASHBOARD
+    rdebugI("voltage is %.2f \t", fTrueVoltage);
+  #endif
   float fFuelReading = movingAverage(fFuelTankArray, FUELSIZE, mapFloat(adc.readADC(FUEL_PIN), 0, 1023, 0, 100));
-
-//  rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
+  #ifdef DEBUGDASHBOARD
+    rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
+  #endif
   float fOilPressureReading = movingAverage(fOilPressureArray, OILPRESSURESIZE, mapFloat(adc.readADC(OILPRESSURE_PIN),0,1023,0,100)) ;
-//  rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
+  #ifdef DEBUGDASHBOARD
+    rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
+  #endif
   float fOilTempReading = movingAverage(fOilTemperatureArray, OILTEMPERATURESIZE, mapFloat(adc.readADC(OILTEMPERATURE_PIN),0,1023,0,160));
-
-//  rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
-//  rdebugDln("Digital RPM %f",fRPM);
-//  rdebugDln("Speed over distance %f",fKph);
-//  rdebugIln("Creating JSON object");
+  #ifdef DEBUGDASHBOARD
+    rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
+    rdebugDln("Digital RPM %f",fRPM);
+    rdebugDln("Speed over distance %f",fKph);
+    rdebugIln("Creating JSON object");
+  #endif
   StaticJsonBuffer<2048> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
 
@@ -208,11 +230,11 @@ void getData() {
 
   root["fuel"] = getRotation(fFuelReading,-45,45,0,100);
   root["volts"] = getRotation(fTrueVoltage,-45,45,8,16);
-  //rdebugIln("rotation is %i degrees", getRotation(fTrueVoltage,-45,45,8,16) );
-
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("rotation is %i degrees", getRotation(fTrueVoltage,-45,45,8,16) );
+  #endif
   root["pressure"] = getRotation(fOilPressureReading,-45,45,0,80);
   root["temp"] = getRotation(fOilTempReading,-45,45,60,160);
- // rdebugIln("reading indicators and highbeam")
   root["leftIndicator"] = !digitalRead(LEFTINDICATOR_PIN);
   root["rightIndicator"] = !digitalRead(RIGHTINDICATOR_PIN);
   root["highBeamWarning"] = !digitalRead(HIGHBEAM_PIN);
@@ -242,8 +264,9 @@ void getData() {
   String output;
   root.printTo(output);
   server.send(200, "text/html", output);
-
-  rdebugDln("returning JSON values for iteration %6ld ", fDataCount);
+  #ifdef DEBUGDASHBOARD
+    rdebugDln("returning JSON values for iteration %6ld ", fDataCount);
+  #endif
 }
 
 bool createWifiAP() {
@@ -296,42 +319,54 @@ void setup() {
     return;
   }
   // initialise debugging over telnet
+  #ifdef DEBUGDASHBOARD
+    Debug.begin(WiFi.hostname()); // Initiaze the telnet server
+    Debug.setResetCmdEnabled(true); // Enable the reset command
 
-  Debug.begin(WiFi.hostname()); // Initiaze the telnet server
-  Debug.setResetCmdEnabled(true); // Enable the reset command
-
-  Debug.showProfiler(true); // Profiler
-	Debug.showColors(true); // Colors
-  Debug.setSerialEnabled(true);
-
+    Debug.showProfiler(true); // Profiler
+  	Debug.showColors(true); // Colors
+    Debug.setSerialEnabled(true);
+  #endif
   // This callback will be called when JeVe_EasyOTA has anything to tell you.
   OTA.onMessage([](char *message, int line) {
     Serial.println(message);
   });
-  rdebugIln("Setting up OTA");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("Setting up OTA");
+  #endif
   OTA.setup(WIFI_SSID, WIFI_PASSWORD, ARDUINO_HOSTNAME);
   // Define the input pins // remember the inputs through the H11L1Ms are inverted
-  rdebugIln("configuring input pins");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("configuring input pins");
+  #endif
   pinMode( HIGHBEAM_PIN, INPUT_PULLUP);
   pinMode( LEFTINDICATOR_PIN, INPUT_PULLUP);
   pinMode( RIGHTINDICATOR_PIN, INPUT_PULLUP);
   // initialise the Interrupt handling on the input pins
-  rdebugIln("Setting up interrupts for Tacho and Speedo");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("Setting up interrupts for Tacho and Speedo");
+  #endif
   fTachCounter = 0;
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING);
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   // start the mcp3008 ADC
-  rdebugIln("initialise ADC");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("initialise ADC");
+  #endif
   adc.begin();
   fDataCount = 0;
-  rdebugIln("end of setup");
+  #ifdef DEBUGDASHBOARD
+    rdebugIln("end of setup");
+  #endif
 }
 
 void loop() {
   server.handleClient();
   // Over-the-air deployment
   OTA.loop();
-  // Remote debug over telnet
-  Debug.handle();
+  #ifdef DEBUGDASHBOARD
+    // Remote debug over telnet
+    Debug.handle();
+  #endif
   yield();
 }
