@@ -29,10 +29,10 @@
 #define TACHO_PIN     D3 // GPI O2 (D4) Input - Tachometer signal thru schmitt trigger optocoupler.
 #define SPEEDO_PIN  D4 //  GPIO4 (D2) physical 10 D6, logical 10
 // Analogue (ADC) inputs
-#define VOLTS_PIN 0 //0-100
-#define FUEL_PIN 1 //0-100
-#define OILPRESSURE_PIN 2 //0-80
-#define OILTEMPERATURE_PIN 3//0-180
+#define VOLTS_PIN 0
+#define FUEL_PIN 1
+#define OILPRESSURE_PIN 2
+#define OILTEMPERATURE_PIN 3
 
 // other definitions used to calculate various Values
 #define TACHFILTERSIZE  10// Size of the moving average filter for RPM.
@@ -66,6 +66,7 @@ volatile int fLastTimeAround=millis();
 volatile float fSpeedoKPHArray[SPEEDOFILTERSIZE];
 long fFilterSum = 0;
 volatile float fThisKph;
+volatile long fDataCount = 0;
 //float value=0;
 //float fRev=0;
 
@@ -128,20 +129,20 @@ float getSpeedOverDistance(){
 }
 // ******************************************* Other methods **************************************//
 
-int getRotation(int reading, int startDegrees, int endDegrees, int startValue, int endValue){
-    if( reading==0||reading<=startValue)
+float getRotation(float reading, int startDegrees, int endDegrees, int startValue, int endValue){
+    // rdebugDln("Reading %.2f StartDegrees %i, endDegrees %i startValue %i endValue %i ", reading, startDegrees, endDegrees, startValue, endValue);
+    if(reading<=startValue)
     {
+      //rdebugDln("Using StartDegrees");
       return startDegrees;
     }
     else if (reading>=endValue) {
+      //rdebugDln("using endDegrees");
       return endDegrees;
     }
     else
     {
-      int totalRotation = endDegrees - startDegrees;
-      int totalScale = (endValue - startValue);
-      int fReading = (reading - startValue);
-      return round(((fReading/totalScale)*totalRotation) + startDegrees);
+      return round( startDegrees + ((reading - startValue) * ((endDegrees - startDegrees)/(endValue - startValue))));
     }
 
 }
@@ -153,17 +154,17 @@ float mapFloat(long x, long in_min, long in_max, float out_min, float out_max)
 }
 
 float getTrueVoltage(int adcIn){
-  float returnVoltage = mapFloat(adcIn, 0, 1023, 0, 20.2);
-  rdebugDln("voltage in from adc : %d return voltage %.2f",adcIn, returnVoltage);
-  return(returnVoltage);
-
+  const float dividervalue = 0.1072;
+  return mapFloat(adcIn, 0, 1023, 0, 3.3)/ dividervalue;
 }
 
 //******************************************** getData() *******************************************//
 void getData() {
   // NOTE: **************** this is called frequently so keep it lean ******************************//
   // Tachometer values
-  rdebugIln("getData() called from web page");
+  fDataCount++;
+  rdebugD("getData() called from web page iteration %6ld \t", fDataCount);
+
   detachInterrupt(digitalPinToInterrupt(TACHO_PIN));           //detaches the interrupt while we update the values
   float fRPM=getRpm();
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING); // re-attaches the interupt coil goes low on each pulse but input is inverted by the H11L1M
@@ -173,19 +174,20 @@ void getData() {
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
-  rdebugDln("Reading values from mcp3008 ADC");
+  //rdebugIln("Reading values from mcp3008 ADC");
+  //rdebugI("ADC from pin %i is %i \t",VOLTS_PIN,adc.readADC(VOLTS_PIN) );
   float fTrueVoltage = getTrueVoltage(adc.readADC(VOLTS_PIN));
-  rdebugDln("Voltage from pin %i voltage %f",VOLTS_PIN,fTrueVoltage);
-  float fFuelReading = adc.readADC(FUEL_PIN);
-  rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
-  float fOilPressureReading = adc.readADC(OILPRESSURE_PIN);
-  rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
-  float fOilTempReading = adc.readADC(OILTEMPERATURE_PIN);
-  rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
-  rdebugDln("Digital RPM %f",fRPM);
-  rdebugDln("Speed over distance %f",fKph);
+  //rdebugI("voltage is %.2f \t", fTrueVoltage);
 
-  rdebugDln("Creating JSON object");
+  float fFuelReading = adc.readADC(FUEL_PIN);
+//  rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
+  float fOilPressureReading = adc.readADC(OILPRESSURE_PIN);
+//  rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
+  float fOilTempReading = adc.readADC(OILTEMPERATURE_PIN);
+//  rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
+//  rdebugDln("Digital RPM %f",fRPM);
+//  rdebugDln("Speed over distance %f",fKph);
+//  rdebugIln("Creating JSON object");
   StaticJsonBuffer<2048> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
 
@@ -194,11 +196,11 @@ void getData() {
 
   root["fuel"] = getRotation(fFuelReading,-45,45,0,100);
   root["volts"] = getRotation(fTrueVoltage,-45,45,8,16);
-  rdebugDln("volts rotation %i", getRotation(fTrueVoltage,-45,45,8,16) );
+  //rdebugIln("rotation is %i degrees", getRotation(fTrueVoltage,-45,45,8,16) );
 
   root["pressure"] = getRotation(fOilPressureReading,-45,45,0,80);
   root["temp"] = getRotation(fOilTempReading,-45,45,60,160);
-
+ // rdebugIln("reading indicators and highbeam")
   root["leftIndicator"] = !digitalRead(LEFTINDICATOR_PIN);
   root["rightIndicator"] = !digitalRead(RIGHTINDICATOR_PIN);
   root["highBeamWarning"] = !digitalRead(HIGHBEAM_PIN);
@@ -208,12 +210,28 @@ void getData() {
   root["lowBatteryWarning"] = fTrueVoltage < 12;
   root["hotOilWarning"] = fOilTempReading > 200;
 
+  // Just for testing
+  int fMilesCount = fDataCount / 10;
+  if (fMilesCount/10 > 9999999){
+    fDataCount = 0;
+    fMilesCount = 0;
+  }
+  // odoMiles has preceeding zeros
+
+
+  String sOdoMiles = "";
+  sOdoMiles+=(fMilesCount / 10);
+  while(sOdoMiles.length() < 7){
+    sOdoMiles = "0" + sOdoMiles;
+  }
+  root["odoMiles"] = sOdoMiles;
+  root["odoTenths"] = fMilesCount % 10;
   //print the resulting JSON to a String
   String output;
   root.printTo(output);
-
-  delay(2000);
   server.send(200, "text/html", output);
+
+  rdebugDln("returning JSON values for iteration %6ld ", fDataCount);
 }
 
 bool createWifiAP() {
@@ -266,12 +284,14 @@ void setup() {
     return;
   }
   // initialise debugging over telnet
+
   Debug.begin(WiFi.hostname()); // Initiaze the telnet server
   Debug.setResetCmdEnabled(true); // Enable the reset command
 
   Debug.showProfiler(true); // Profiler
 	Debug.showColors(true); // Colors
   Debug.setSerialEnabled(true);
+
   // This callback will be called when JeVe_EasyOTA has anything to tell you.
   OTA.onMessage([](char *message, int line) {
     Serial.println(message);
@@ -289,14 +309,17 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING);
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   // start the mcp3008 ADC
+  rdebugIln("initialise ADC");
   adc.begin();
+  fDataCount = 0;
+  rdebugIln("end of setup");
 }
 
 void loop() {
+  server.handleClient();
   // Over-the-air deployment
   OTA.loop();
   // Remote debug over telnet
   Debug.handle();
-  server.handleClient();
   yield();
 }

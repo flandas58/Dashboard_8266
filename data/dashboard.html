@@ -12,19 +12,7 @@
 
   <script type="text/javascript">
 
-   // getRotationText function is called 10 times a second
-		var svglInterval = setInterval(function(){ getRotationText() }, 20); //times a second
-
-		var elem = document.getElementById("svg_dashboard");
-		if (elem.requestFullscreen) {
-		  elem.requestFullscreen();
-		} else if (elem.mozRequestFullScreen) { /* Firefox */
-		  elem.mozRequestFullScreen();
-		} else if (elem.webkitRequestFullscreen) { /* Chrome, Safari and Opera */
-		  elem.webkitRequestFullscreen();
-		} else if (elem.msRequestFullscreen) { /* IE/Edge */
-		  elem.msRequestFullscreen();
-		}
+   var svglInterval = setInterval(function(){ getRotationData() }, 200); //interval in milliseconds 200 = 1/5 second
 
 		function SVGImageLoaded(){
 			document.getElementById("svg_dashboard").getSVGDocument().getElementById("gaugesBackground").setAttribute('height', screen.height);
@@ -48,6 +36,8 @@
 			oilTempElement= document.getElementById("svg_dashboard").getSVGDocument().getElementById("oilTempNeedle");
 			oilTempElement.setAttribute('transform',"rotate(" + rotations.temp + " 46,112)");
 			leftIndicatorElement= document.getElementById("svg_dashboard").getSVGDocument().getElementById("leftIndicator");
+
+
 			if (rotations.leftIndicator){
 				leftIndicatorElement.setAttribute('fill',"url(#greenOn)")
 			}
@@ -92,7 +82,7 @@
 			else {
 				lowOilElement.setAttribute('fill',"url(#warningOff)");
 			}
-			lowBatteryElement= document.getElementById("svg_dashboard").getSVGDocument().getElementById("lowBatteryWarning");
+			lowBatteryElement= document.getElementById("svg_dashboard").getSVGDocument().getElementById("batteryWarning");
 			if(rotations.lowBatteryWarning){
 				lowBatteryElement.setAttribute('fill',"url(#yellowOn)");
 			}
@@ -106,10 +96,19 @@
 			else {
 				hotOilElement.setAttribute('fill',"url(#warningOff)");
 			}
+
+			var odoElement = document.getElementById("svg_dashboard").getSVGDocument().getElementById("odometerMiles");
+
+			var odoNode = odoElement.childNodes[0];
+			odoNode.nodeValue = rotations.odoMiles;
+
+		  var tenthsElement = document.getElementById("svg_dashboard").getSVGDocument().getElementById("odometerTenths");
+			var tenthsNode = tenthsElement.childNodes[0];
+			tenthsNode.nodeValue = rotations.odoTenths;
 		}
 
 		// called 10 times a second
-		function getRotationText(){
+		function getRotationData(){
 
 			var xmlhttp = new XMLHttpRequest();
 			xmlhttp.onreadystatechange = function() {
