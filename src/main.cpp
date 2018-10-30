@@ -37,6 +37,10 @@
 // other definitions used to calculate various Values
 #define TACHFILTERSIZE  10// Size of the moving average filter for RPM.
 #define SPEEDOFILTERSIZE 5
+#define OILPRESSURESIZE 5
+#define OILTEMPERATURESIZE 5
+#define VOLTAGESIZE 10
+#define FUELSIZE 20 // has to be large to allow for slopping in the tank
 
 #define systemLedPin 13
 
@@ -70,6 +74,12 @@ volatile long fDataCount = 0;
 //float value=0;
 //float fRev=0;
 
+// moving averages
+float fOilPressureArray[OILPRESSURESIZE];
+float fOilTemperatureArray[OILTEMPERATURESIZE];
+float fVoltageArray[VOLTAGESIZE];
+float fFuelTankArray[FUELSIZE];
+
 //************************************* END VARIABLES AND CONSTANTS ***************************************//
 
 // ****************************************** METHODS ***************************************//
@@ -83,6 +93,21 @@ void listSPIFFS(){
     DBG_OUTPUT_PORT.println(dir.fileSize());
   }
 }
+
+float movingAverage(float pTarget[], int pArraySize, float pNewValue){
+  float fArraySum = 0;
+  for ( int i = 0; i < pArraySize - 1 ; i++ ) {
+    pTarget[i] = pTarget[i + 1];
+    fArraySum += pTarget[i]; // adding the
+  }
+  // add the newest reading to the end of the array.
+  pTarget[pArraySize - 1] = pNewValue;
+  fArraySum+=pNewValue;
+
+  return fArraySum/pArraySize;
+}
+
+
 // *************************************** Tacho methods ************************************//
   // Tach signal input triggers this interrupt vector on the falling edge of pin D3 //
   void tacho_isr(){
@@ -93,18 +118,8 @@ void listSPIFFS(){
     fThisRPM = (fTachCounter/(millis() - fPreviousTime)) * 60000;
                  //saves the current time
     fTachCounter = 0;
-    fFilterSum = 0;
-    // Shift elements up one, and add the total.
-    for ( int i = 0; i < TACHFILTERSIZE - 1 ; i++ ) {
-      fTachFrequencyArray[i] = fTachFrequencyArray[i + 1];
-      fFilterSum += fTachFrequencyArray[i]; // adding the
-    }
-    // add the newest reading to the end of the array.
-    fTachFrequencyArray[TACHFILTERSIZE - 1] = fThisRPM; // Because the ISR is called @ counterFreq Hz
-    fFilterSum += fThisRPM;
     fPreviousTime=millis();
-    // now return the adjusted average
-    return ( fFilterSum / TACHFILTERSIZE ) * 15 ; //60/4 ppr=15
+    return movingAverage(fTachFrequencyArray, TACHFILTERSIZE, fThisRPM)  * 15 ; //60/4 ppr=15
   }
 // ***************************************** Speedo methods ***************************************//
 // speedo signal input triggers this interrupt vector on the rising edge of pin D4 //
@@ -153,11 +168,6 @@ float mapFloat(long x, long in_min, long in_max, float out_min, float out_max)
   return  returnValue;
 }
 
-float getTrueVoltage(int adcIn){
-  const float dividervalue = 0.1072;
-  return mapFloat(adcIn, 0, 1023, 0, 3.3)/ dividervalue;
-}
-
 //******************************************** getData() *******************************************//
 void getData() {
   // NOTE: **************** this is called frequently so keep it lean ******************************//
@@ -174,16 +184,18 @@ void getData() {
   attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
+
   //rdebugIln("Reading values from mcp3008 ADC");
   //rdebugI("ADC from pin %i is %i \t",VOLTS_PIN,adc.readADC(VOLTS_PIN) );
-  float fTrueVoltage = getTrueVoltage(adc.readADC(VOLTS_PIN));
+  float fTrueVoltage = movingAverage(fVoltageArray, VOLTAGESIZE, mapFloat(adc.readADC(VOLTS_PIN), 0, 1023, 0, 3.3)/ 0.1072);
   //rdebugI("voltage is %.2f \t", fTrueVoltage);
+  float fFuelReading = movingAverage(fFuelTankArray, FUELSIZE, mapFloat(adc.readADC(FUEL_PIN), 0, 1023, 0, 100));
 
-  float fFuelReading = adc.readADC(FUEL_PIN);
 //  rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
-  float fOilPressureReading = adc.readADC(OILPRESSURE_PIN);
+  float fOilPressureReading = movingAverage(fOilPressureArray, OILPRESSURESIZE, mapFloat(adc.readADC(OILPRESSURE_PIN),0,1023,0,100)) ;
 //  rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
-  float fOilTempReading = adc.readADC(OILTEMPERATURE_PIN);
+  float fOilTempReading = movingAverage(fOilTemperatureArray, OILTEMPERATURESIZE, mapFloat(adc.readADC(OILTEMPERATURE_PIN),0,1023,0,160));
+
 //  rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
 //  rdebugDln("Digital RPM %f",fRPM);
 //  rdebugDln("Speed over distance %f",fKph);
