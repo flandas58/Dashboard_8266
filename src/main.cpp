@@ -7,8 +7,9 @@
 #include <ArduinoJson.h>
 #include <Adafruit_MCP3008.h>
 #include "FS.h"
-#include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
-//#define DEBUGDASHBOARD
+
+//#include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
+#define DEBUGDASHBOARD
 #ifdef DEBUGDASHBOARD
   #include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
 #endif
@@ -17,8 +18,6 @@
 //******************************************* DEFINITIONS *********************************************//
 #define DBG_OUTPUT_PORT Serial
 #define HOST_NAME "Dashboard-debug"
-
-
 
 #define TYRE_CIRCUMFERENCE 195 // distance car travels in one wheel rotation, measured in centimeters
 
@@ -63,7 +62,7 @@ char* ARDUINO_HOSTNAME = "vw_dashboard";
 #ifdef DEBUGDASHBOARD
   RemoteDebug Debug;
 #endif
-EasyOTA OTA;
+//EasyOTA OTA;
 Adafruit_MCP3008 adc;
 ESP8266WebServer server(80);
 
@@ -231,7 +230,7 @@ void getData() {
   root["fuel"] = getRotation(fFuelReading,-45,45,0,100);
   root["volts"] = getRotation(fTrueVoltage,-45,45,8,16);
   #ifdef DEBUGDASHBOARD
-    rdebugIln("rotation is %i degrees", getRotation(fTrueVoltage,-45,45,8,16) );
+    rdebugIln("rotation is %.0f degrees", getRotation(fTrueVoltage,-45,45,8,16) );
   #endif
   root["pressure"] = getRotation(fOilPressureReading,-45,45,0,80);
   root["temp"] = getRotation(fOilTempReading,-45,45,60,160);
@@ -328,13 +327,13 @@ void setup() {
     Debug.setSerialEnabled(true);
   #endif
   // This callback will be called when JeVe_EasyOTA has anything to tell you.
-  OTA.onMessage([](char *message, int line) {
-    Serial.println(message);
-  });
+  //OTA.onMessage([](char *message, int line) {
+  //  Serial.println(message);
+  //});
   #ifdef DEBUGDASHBOARD
     rdebugIln("Setting up OTA");
   #endif
-  OTA.setup(WIFI_SSID, WIFI_PASSWORD, ARDUINO_HOSTNAME);
+  //OTA.setup(WIFI_SSID, WIFI_PASSWORD, ARDUINO_HOSTNAME);
   // Define the input pins // remember the inputs through the H11L1Ms are inverted
   #ifdef DEBUGDASHBOARD
     rdebugIln("configuring input pins");
@@ -363,7 +362,7 @@ void setup() {
 void loop() {
   server.handleClient();
   // Over-the-air deployment
-  OTA.loop();
+//  OTA.loop();
   #ifdef DEBUGDASHBOARD
     // Remote debug over telnet
     Debug.handle();
