@@ -8,7 +8,7 @@
 #include <Adafruit_MCP3008.h>
 #include "FS.h"
 
-//#include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
+#include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
 #define DEBUGDASHBOARD
 #ifdef DEBUGDASHBOARD
   #include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
@@ -19,25 +19,24 @@
 #define DBG_OUTPUT_PORT Serial
 #define HOST_NAME "Dashboard-debug"
 
-#define TYRE_CIRCUMFERENCE 195 // distance car travels in one wheel rotation, measured in centimeters
-
 // ***************************************** PIN Defines **********************************************//
 
 //digital inputs  GPIO 0 -4 //
 // NOTE: GPIO 13-15 (D5-D8) are reserved for SPI communication with MCP3008 ADC
 // voltage uses simple divider circuit
 
-#define HIGHBEAM_PIN D0// D0 cannont be used as an interrupt pin but can be used as a GPIO pin
-#define LEFTINDICATOR_PIN D1 // GPIO0 (D3)
-#define RIGHTINDICATOR_PIN D2 // GPIO5 (D1)
 // so now we can use D3 and D4 for interrupts
 #define TACHO_PIN     D3 // GPI O2 (D4) Input - Tachometer signal thru schmitt trigger optocoupler.
 #define SPEEDO_PIN  D4 //  GPIO4 (D2) physical 10 D6, logical 10
 // Analogue (ADC) inputs
-#define VOLTS_PIN 0
-#define FUEL_PIN 1
-#define OILPRESSURE_PIN 2
-#define OILTEMPERATURE_PIN 3
+#define VOLTS_ADC 0
+#define FUEL_ADC 1
+#define OILPRESSURE_ADC 3
+#define OILTEMPERATURE_ADC 2
+
+#define HIGHBEAM_ADC 7// D0 cannont be used as an interrupt pin but can be used as a GPIO pin
+#define LEFTINDICATOR_ADC 6 // GPIO0 (D3)
+#define RIGHTINDICATOR_ADC 5 // GPIO5 (D1)
 
 // other definitions used to calculate various Values
 #define TACHFILTERSIZE  10// Size of the moving average filter for RPM.
@@ -129,26 +128,7 @@ float movingAverage(float pTarget[], int pArraySize, float pNewValue){
     return movingAverage(fTachFrequencyArray, TACHFILTERSIZE, fThisRPM)  * 15 ; //60/4 ppr=15
   }
 // ***************************************** Speedo methods ***************************************//
-// speedo signal input triggers this interrupt vector on the rising edge of pin D4 //
-void speedo_isr(){
-  fElapsedTime = millis() - fLastTimeAround;
-  fThisKph = (TYRE_CIRCUMFERENCE/100000)/(fElapsedTime/3600000 );
 
-  for ( int i = 0; i < SPEEDOFILTERSIZE - 1 ; i++ ) {
-    fSpeedoKPHArray[i] = fSpeedoKPHArray[i + 1];
-  }
-  // add the newest reading to the end of the array.
-  fSpeedoKPHArray[SPEEDOFILTERSIZE - 1] = fThisKph; // Because the ISR is called @ counterFreq Hz
-  fLastTimeAround = millis();
-}
-
-float getSpeedOverDistance(){
-  float fKphSum = 0;
-  for ( int i = 0; i < SPEEDOFILTERSIZE - 1 ; i++ ) {
-    fKphSum+=fSpeedoKPHArray[i];
-  }
-  return fKphSum/SPEEDOFILTERSIZE;
-}
 // ******************************************* Other methods **************************************//
 
 float getRotation(float reading, int startDegrees, int endDegrees, int startValue, int endValue){
@@ -194,33 +174,34 @@ void getData() {
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING); // re-attaches the interupt coil goes low on each pulse but input is inverted by the H11L1M
   // Speedo values
   detachInterrupt(digitalPinToInterrupt(SPEEDO_PIN));
-  float fKph = getSpeedOverDistance();
-  attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
+  float fKph = 65;
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
   #ifdef DEBUGDASHBOARD
     rdebugIln("Reading values from mcp3008 ADC");
-    rdebugI("ADC from pin %i is %i \t",VOLTS_PIN,adc.readADC(VOLTS_PIN) );
+    rdebugI("ADC from pin %i is %i \t",VOLTS_ADC,adc.readADC(VOLTS_ADC) );
   #endif
-  float fTrueVoltage = movingAverage(fVoltageArray, VOLTAGESIZE, mapFloat(adc.readADC(VOLTS_PIN), 0, 1023, 0, 3.3)/ 0.1072);
+  float fTrueVoltage = movingAverage(fVoltageArray, VOLTAGESIZE, mapFloat(adc.readADC(VOLTS_ADC), 0, 1023, 0, 3.3)/ 0.1072);
   #ifdef DEBUGDASHBOARD
     rdebugI("voltage is %.2f \t", fTrueVoltage);
   #endif
-  float fFuelReading = movingAverage(fFuelTankArray, FUELSIZE, mapFloat(adc.readADC(FUEL_PIN), 0, 1023, 0, 100));
+  float fFuelReading = movingAverage(fFuelTankArray, FUELSIZE, mapFloat(adc.readADC(FUEL_ADC), 0, 1023, 0, 100));
   #ifdef DEBUGDASHBOARD
-    rdebugDln("Fuel from pin %i voltage %f",FUEL_PIN,fFuelReading);
+    rdebugDln("Fuel from pin %i voltage %f",FUEL_ADC,fFuelReading);
   #endif
-  float fOilPressureReading = movingAverage(fOilPressureArray, OILPRESSURESIZE, mapFloat(adc.readADC(OILPRESSURE_PIN),0,1023,0,100)) ;
+  float fOilPressureReading = movingAverage(fOilPressureArray, OILPRESSURESIZE, mapFloat(adc.readADC(OILPRESSURE_ADC),0,1023,0,100)) ;
   #ifdef DEBUGDASHBOARD
-    rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_PIN,fOilPressureReading);
+    rdebugDln("Oil Pressure from pin %i voltage %f",OILPRESSURE_ADC,fOilPressureReading);
   #endif
-  float fOilTempReading = movingAverage(fOilTemperatureArray, OILTEMPERATURESIZE, mapFloat(adc.readADC(OILTEMPERATURE_PIN),0,1023,0,160));
+  float fOilTempReading = movingAverage(fOilTemperatureArray, OILTEMPERATURESIZE, mapFloat(adc.readADC(OILTEMPERATURE_ADC),0,1023,0,160));
   #ifdef DEBUGDASHBOARD
-    rdebugDln("Oil Temp from pin %i voltage %f",OILTEMPERATURE_PIN,fOilTempReading);
+    rdebugDln("Oil Temp from ADC pin %i voltage %f",OILTEMPERATURE_ADC,fOilTempReading);
     rdebugDln("Digital RPM %f",fRPM);
     rdebugDln("Speed over distance %f",fKph);
     rdebugIln("Creating JSON object");
   #endif
+
+
   StaticJsonBuffer<2048> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
 
@@ -232,11 +213,14 @@ void getData() {
   #ifdef DEBUGDASHBOARD
     rdebugIln("rotation is %.0f degrees", getRotation(fTrueVoltage,-45,45,8,16) );
   #endif
+
   root["pressure"] = getRotation(fOilPressureReading,-45,45,0,80);
   root["temp"] = getRotation(fOilTempReading,-45,45,60,160);
-  root["leftIndicator"] = !digitalRead(LEFTINDICATOR_PIN);
-  root["rightIndicator"] = !digitalRead(RIGHTINDICATOR_PIN);
-  root["highBeamWarning"] = !digitalRead(HIGHBEAM_PIN);
+
+
+  root["leftIndicator"] = adc.readADC(LEFTINDICATOR_ADC) < 256;
+  root["rightIndicator"] = adc.readADC(RIGHTINDICATOR_ADC) < 256;
+  root["highBeamWarning"] = adc.readADC(HIGHBEAM_ADC) < 256;
 
   root["lowFuelWarning"] = fFuelReading<10;
   root["lowOilWarning"]= fOilPressureReading < 30;
@@ -338,16 +322,15 @@ void setup() {
   #ifdef DEBUGDASHBOARD
     rdebugIln("configuring input pins");
   #endif
-  pinMode( HIGHBEAM_PIN, INPUT_PULLUP);
-  pinMode( LEFTINDICATOR_PIN, INPUT_PULLUP);
-  pinMode( RIGHTINDICATOR_PIN, INPUT_PULLUP);
+  pinMode( HIGHBEAM_ADC, INPUT_PULLUP);
+  pinMode( LEFTINDICATOR_ADC, INPUT_PULLUP);
+  pinMode( RIGHTINDICATOR_ADC, INPUT_PULLUP);
   // initialise the Interrupt handling on the input pins
   #ifdef DEBUGDASHBOARD
     rdebugIln("Setting up interrupts for Tacho and Speedo");
   #endif
   fTachCounter = 0;
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING);
-  attachInterrupt(digitalPinToInterrupt(SPEEDO_PIN),speedo_isr,FALLING);
   // start the mcp3008 ADC
   #ifdef DEBUGDASHBOARD
     rdebugIln("initialise ADC");
