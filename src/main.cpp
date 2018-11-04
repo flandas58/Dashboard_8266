@@ -3,17 +3,14 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-//#include <DNSServer.h>
 #include <ArduinoJson.h>
 #include <Adafruit_MCP3008.h>
 #include "FS.h"
 
-#include <JeVe_EasyOTA.h>  // https://github.com/jeroenvermeulen/JeVe_EasyOTA/blob/master/JeVe_EasyOTA.h
 #define DEBUGDASHBOARD
 #ifdef DEBUGDASHBOARD
   #include "RemoteDebug.h"   // https://github.com/JoaoLopesF/RemoteDebug
 #endif
-
 
 //******************************************* DEFINITIONS *********************************************//
 #define DBG_OUTPUT_PORT Serial
@@ -27,7 +24,6 @@
 
 // so now we can use D3 and D4 for interrupts
 #define TACHO_PIN     D3 // GPI O2 (D4) Input - Tachometer signal thru schmitt trigger optocoupler.
-#define SPEEDO_PIN  D4 //  GPIO4 (D2) physical 10 D6, logical 10
 // Analogue (ADC) inputs
 #define VOLTS_ADC 0
 #define FUEL_ADC 1
@@ -53,15 +49,11 @@
 
 const char* ssid = "VWDash";
 const char* password = "IGiveUp24318";
-// OTA values
-char* WIFI_SSID = "Gannymede";
-char* WIFI_PASSWORD = "IGiveUp24318";
-char* ARDUINO_HOSTNAME = "vw_dashboard";
 
 #ifdef DEBUGDASHBOARD
   RemoteDebug Debug;
 #endif
-//EasyOTA OTA;
+
 Adafruit_MCP3008 adc;
 ESP8266WebServer server(80);
 
@@ -112,7 +104,6 @@ float movingAverage(float pTarget[], int pArraySize, float pNewValue){
 
   return fArraySum/pArraySize;
 }
-
 
 // *************************************** Tacho methods ************************************//
   // Tach signal input triggers this interrupt vector on the falling edge of pin D3 //
@@ -173,7 +164,7 @@ void getData() {
   float fRPM=getRpm();
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING); // re-attaches the interupt coil goes low on each pulse but input is inverted by the H11L1M
   // Speedo values
-  detachInterrupt(digitalPinToInterrupt(SPEEDO_PIN));
+  // TODO - Add GPS handling for speedo
   float fKph = 65;
   //This is a JSON formatted string that will be served. You can change the values to whatever like.
   // {"data":[{"dataValue":"1024"},{"dataValue":"23"}]} This is essentially what is will output you can add more if you like
@@ -315,19 +306,16 @@ void setup() {
   //  Serial.println(message);
   //});
   #ifdef DEBUGDASHBOARD
-    rdebugIln("Setting up OTA");
+    // rdebugIln("Setting up OTA");
   #endif
-  //OTA.setup(WIFI_SSID, WIFI_PASSWORD, ARDUINO_HOSTNAME);
+  // OTA.addAP(OTA_SSID, OTA_PASSWORD);
   // Define the input pins // remember the inputs through the H11L1Ms are inverted
   #ifdef DEBUGDASHBOARD
     rdebugIln("configuring input pins");
   #endif
-  pinMode( HIGHBEAM_ADC, INPUT_PULLUP);
-  pinMode( LEFTINDICATOR_ADC, INPUT_PULLUP);
-  pinMode( RIGHTINDICATOR_ADC, INPUT_PULLUP);
   // initialise the Interrupt handling on the input pins
   #ifdef DEBUGDASHBOARD
-    rdebugIln("Setting up interrupts for Tacho and Speedo");
+    rdebugIln("Setting up interrupts for Tacho");
   #endif
   fTachCounter = 0;
   attachInterrupt(digitalPinToInterrupt(TACHO_PIN),tacho_isr,RISING);
@@ -344,11 +332,8 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  // Over-the-air deployment
-//  OTA.loop();
   #ifdef DEBUGDASHBOARD
-    // Remote debug over telnet
-    Debug.handle();
+    Debug.handle();  // Remote debug over telnet
   #endif
   yield();
 }
